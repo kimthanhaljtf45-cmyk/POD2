@@ -41,7 +41,6 @@ import { AdminPanel } from './pages/AdminPanel';
 import { Analytics as ClubAnalytics } from './pages/ClubAnalytics';
 import { LiveManagement } from './pages/LiveManagement';
 import { LiveRoom as LiveRoomView } from './pages/LiveRoomView';
-import { Referrals } from './pages/Referrals';
 import './App.css';
 
 function App() {
