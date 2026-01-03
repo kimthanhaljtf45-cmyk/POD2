@@ -105,8 +105,6 @@ function App() {
                   <Route path="/dashboard" element={<Dashboard />} />
                   <Route path="/moderator" element={<Moderator />} />
                   <Route path="/analytics/:authorId" element={<Analytics />} />
-                  <Route path="/referrals" element={<Referrals />} />
-                  <Route path="/invite" element={<Referrals />} />
                 </Routes>
                 {/* Floating Live Player - shows when user leaves live room */}
                 <FloatingLivePlayer />
