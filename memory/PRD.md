@@ -1,165 +1,152 @@
-# FOMO Podcasts Platform - Product Requirements
+# PRD - FOMO Podcasts Platform
 
 ## Обзор продукта
 
-FOMO Podcasts — приватная платформа для подкастеров с live-стримингом, gamification и Telegram интеграцией.
+FOMO Podcasts - закрытая платформа для голосовых подкастов с функциями:
+- Real-time аудио стриминг (LiveKit WebRTC)
+- Live чат с эмодзи реакциями
+- Система поднятия руки (Hand Raise)
+- Gamification (XP, Badges, Levels)
+- Telegram интеграция
 
-## Текущее состояние (v2.0.0)
+---
 
-### ✅ Полностью реализовано
+## Технический стек
 
-#### Аутентификация
-- MetaMask wallet подключение
-- Роли: Owner, Admin, Member
-- Admin Panel (`/admin`) для управления кошельками
-- Backend middleware защита endpoints
+### Backend
+- **Framework**: FastAPI (Python 3.11)
+- **Database**: MongoDB (Motor async driver)
+- **WebSocket**: Starlette WebSocket
+- **Audio**: LiveKit WebRTC
 
-#### Live Streaming
-- Создание/управление сессиями
-- WebSocket real-time:
-  - Чат с историей
-  - Emoji реакции
-  - Hand raise queue
-  - Promote/demote участников
-- LiveKit WebRTC аудио (требует ключи)
-- Статистика сессий (длительность, участники)
+### Frontend
+- **Framework**: React 19
+- **Styling**: Tailwind CSS
+- **UI**: Shadcn/UI components
+- **Audio Client**: LiveKit React SDK
 
-#### Gamification
-- XP система с авто-наградами
-- 5 уровней (Newcomer → Legend)
-- 14+ бейджей
-- Лидерборды по XP и бейджам
+### Интеграции
+- **LiveKit**: WebRTC аудио стриминг
+- **Telegram Bot API**: уведомления, recording
+- **Web Push API**: PWA уведомления
 
-#### Telegram
-- Бот `@Podcast_FOMO_bot`
-- Уведомления о стримах (start/end)
-- Recording Bot для `@Podcast_F`
-- OAuth подключение для личных алертов
+---
 
-#### Контент
-- Podcast CRUD
-- Комментарии и реакции
-- Библиотека с плейлистами
-- RSS генерация
+## API Ключи
 
-### 🔧 Требует внешней настройки
+### Расположение: `/app/backend/.env`
 
-| Компонент | Статус | Требования |
-|-----------|--------|------------|
-| LiveKit Audio | ⚠️ Mock mode | LIVEKIT_URL, LIVEKIT_API_KEY, LIVEKIT_API_SECRET |
-| Telegram Bot | ✅ Работает | Токен уже настроен |
-| Recording Bot | ⚠️ Manual | Требует запуска `python telegram_recording_bot.py` |
+```env
+# Database
+MONGO_URL="mongodb://localhost:27017"
+DB_NAME="fomo_voice_club"
 
-## Архитектура
+# Security
+JWT_SECRET_KEY="fomo-podcast-secret-key-2025"
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                      Frontend (React)                    │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────────────┐│
-│  │ Podcasts│ │  Live   │ │ Profile │ │  Admin Panel    ││
-│  └────┬────┘ └────┬────┘ └────┬────┘ └────────┬────────┘│
-└───────┼──────────┼──────────┼─────────────────┼─────────┘
-        │          │          │                 │
-        ▼          ▼          ▼                 ▼
-┌─────────────────────────────────────────────────────────┐
-│                    Backend (FastAPI)                     │
-│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────────────┐│
-│  │Podcasts │ │Sessions │ │  XP &   │ │    Telegram     ││
-│  │  API    │ │WebSocket│ │ Badges  │ │    Service      ││
-│  └────┬────┘ └────┬────┘ └────┬────┘ └────────┬────────┘│
-└───────┼──────────┼──────────┼─────────────────┼─────────┘
-        │          │          │                 │
-        ▼          ▼          ▼                 ▼
-┌─────────────────────────────────────────────────────────┐
-│                      MongoDB                             │
-│  users, podcasts, live_sessions, xp_transactions,       │
-│  badges, comments, club_settings, processed_recordings  │
-└─────────────────────────────────────────────────────────┘
-```
+# Telegram (@Podcast_FOMO_bot)
+TELEGRAM_BOT_TOKEN="8293451127:AAEVo5vQV_vJqoziVTDKHYJiOYUZQN-2M2E"
+TELEGRAM_CHANNEL_ID="-1003133850361"
 
-## Ключевые API
-
-### Live Sessions
-```
-GET    /api/live-sessions/sessions          # Список сессий
-POST   /api/live-sessions/sessions          # Создать (Admin)
-POST   /api/live-sessions/sessions/{id}/start  # Старт (Admin)
-POST   /api/live-sessions/sessions/{id}/end    # Завершить (Admin)
-WS     /api/live-sessions/ws/{id}           # WebSocket
-POST   /api/live-sessions/livekit/token     # LiveKit токен
-GET    /api/live-sessions/recordings        # Записи
-POST   /api/live-sessions/recordings/sync   # Синхронизация
-```
-
-### XP & Badges
-```
-GET    /api/xp/leaderboard                  # Рейтинг XP
-GET    /api/xp/levels                       # Уровни
-GET    /api/badges/available                # Все бейджи
-GET    /api/badges/leaderboard              # Рейтинг бейджей
-```
-
-### Admin
-```
-GET    /api/admin/settings                  # Настройки
-POST   /api/admin/settings                  # Обновить (Owner)
-```
-
-## XP Награды
-
-| Действие | XP | Лимит |
-|----------|-----|-------|
-| Вход в сессию | +10 | — |
-| Каждые 5 минут | +5 | — |
-| Сообщение в чат | +2 | 20/сессия |
-| Реакция | +1 | 10/сессия |
-| Поднятие руки | +5 | — |
-| Повышение до speaker | +50 | — |
-
-## База данных
-
-### Основные коллекции
-- `users` — пользователи с XP и бейджами
-- `podcasts` — подкасты
-- `live_sessions` — live сессии
-- `club_settings` — настройки клуба (owner, admins)
-- `xp_transactions` — история XP
-- `processed_recordings` — обработанные записи
-
-## Следующие шаги (Backlog)
-
-### P1 — Production Ready
-- [ ] Supervisor для Recording Bot
-- [ ] Звуковые уведомления в чате
-- [ ] Аватары в live room
-
-### P2 — Расширение
-- [ ] Расписание сессий с напоминаниями
-- [ ] Push уведомления (PWA)
-- [ ] Расширенная аналитика
-- [ ] Система приглашений
-- [ ] Монетизация (донаты, подписки)
-
-## Файлы проекта
-
-```
-/app/
-├── README.md           # Основная документация
-├── QUICKSTART.md       # Быстрый старт
-├── TASKS.md            # Актуальные задачи
-├── CHANGELOG.md        # История изменений
-├── backend/
-│   ├── server.py       # FastAPI приложение
-│   ├── routes/         # API endpoints
-│   ├── middleware/     # Auth middleware
-│   ├── services/       # Telegram service
-│   └── telegram_recording_bot.py
-├── frontend/
-│   ├── src/pages/      # React страницы
-│   └── src/components/ # UI компоненты
-└── recordings/         # Скачанные записи
+# LiveKit (fomo-bxb0f38x)
+LIVEKIT_URL="wss://fomo-bxb0f38x.livekit.cloud"
+LIVEKIT_API_KEY="APIqNLg599MoAHc"
+LIVEKIT_API_SECRET="9wWu3BHo199HEcvcE22KMpcuSDfqy7K7TA5oXEOaXae"
 ```
 
 ---
 
-*Последнее обновление: 2026-01-03*
+## Архитектура Live Streaming
+
+### Flow:
+1. Admin создаёт сессию через `/live-management`
+2. Сессия получает статус `live`
+3. Пользователи подключаются через WebSocket
+4. Чат, реакции, hand raise работают в real-time
+5. Для аудио - генерируется LiveKit token
+6. При завершении - уведомление в Telegram
+
+### WebSocket Endpoint:
+```
+WS /api/live-sessions/ws/{session_id}
+Query params: user_id, username, role
+```
+
+### LiveKit Token Endpoint:
+```
+POST /api/live-sessions/livekit/token
+Body: {session_id, user_id, username}
+```
+
+---
+
+## Telegram Боты
+
+### 1. Notification Bot
+- Username: @Podcast_FOMO_bot
+- Функции: уведомления о стримах
+- Файл: `/app/backend/services/telegram_service.py`
+
+### 2. Recording Bot
+- Слушает канал @Podcast_F
+- Создаёт подкасты из записей
+- Файл: `/app/backend/telegram_recording_bot.py`
+- Запуск: Supervisor
+
+---
+
+## Страницы
+
+| URL | Компонент | Описание |
+|-----|-----------|----------|
+| `/` | Home.jsx | Главная, статистика |
+| `/live-management` | LiveManagement.jsx | Управление стримами |
+| `/live/{id}` | LiveRoomView.jsx | Live комната |
+| `/lives` | LiveStreams.jsx | Список стримов |
+| `/admin` | AdminPanel.jsx | Админка |
+| `/members` | Members.jsx | Участники |
+| `/library` | Library.jsx | Подкасты |
+| `/progress` | Progress.jsx | XP прогресс |
+| `/analytics` | ClubAnalytics.jsx | Аналитика |
+
+---
+
+## Supervisor Services
+
+```
+backend                  - FastAPI сервер (port 8001)
+frontend                 - React dev server (port 3000)
+mongodb                  - MongoDB
+telegram_recording_bot   - Telegram bot
+```
+
+Команды:
+```bash
+sudo supervisorctl status
+sudo supervisorctl restart all
+sudo supervisorctl restart backend
+```
+
+Логи:
+```bash
+tail -f /var/log/supervisor/backend.err.log
+tail -f /var/log/supervisor/telegram_bot.out.log
+```
+
+---
+
+## База данных
+
+### Collections:
+- `users` - пользователи
+- `podcasts` - подкасты
+- `live_sessions` - live сессии
+- `club_settings` - настройки клуба
+- `xp_transactions` - XP транзакции
+- `badges` - бейджи
+- `push_subscriptions` - PWA подписки
+- `notifications` - уведомления
+
+---
+
+*Обновлено: 2026-01-03*
