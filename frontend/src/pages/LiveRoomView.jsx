@@ -27,6 +27,56 @@ import { Track, RoomEvent } from 'livekit-client';
 
 const API = process.env.REACT_APP_BACKEND_URL;
 
+// Sound notification for new messages
+const playMessageSound = () => {
+  try {
+    const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    const oscillator = audioContext.createOscillator();
+    const gainNode = audioContext.createGain();
+    
+    oscillator.connect(gainNode);
+    gainNode.connect(audioContext.destination);
+    
+    oscillator.frequency.value = 800;
+    oscillator.type = 'sine';
+    gainNode.gain.value = 0.1;
+    
+    oscillator.start();
+    oscillator.stop(audioContext.currentTime + 0.1);
+  } catch (e) {
+    console.log('Audio notification not available');
+  }
+};
+
+// Generate avatar color from username
+const getAvatarColor = (name) => {
+  const colors = [
+    'bg-blue-500', 'bg-green-500', 'bg-purple-500', 'bg-pink-500',
+    'bg-yellow-500', 'bg-red-500', 'bg-indigo-500', 'bg-cyan-500',
+    'bg-orange-500', 'bg-teal-500'
+  ];
+  const index = name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0) % colors.length;
+  return colors[index];
+};
+
+// Avatar component
+const UserAvatar = ({ name, size = 'md', className = '' }) => {
+  const initial = name ? name.charAt(0).toUpperCase() : '?';
+  const colorClass = getAvatarColor(name || 'default');
+  const sizeClasses = {
+    sm: 'w-6 h-6 text-xs',
+    md: 'w-8 h-8 text-sm',
+    lg: 'w-10 h-10 text-base',
+    xl: 'w-12 h-12 text-lg'
+  };
+  
+  return (
+    <div className={`${sizeClasses[size]} ${colorClass} rounded-full flex items-center justify-center text-white font-semibold ${className}`}>
+      {initial}
+    </div>
+  );
+};
+
 // Generate or retrieve persistent user ID
 const getUserId = () => {
   let userId = localStorage.getItem('live_user_id');
