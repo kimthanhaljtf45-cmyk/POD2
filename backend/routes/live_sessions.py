@@ -214,6 +214,23 @@ class LiveRoomManager:
         for user_id in disconnected:
             await self.disconnect(session_id, user_id)
     
+    async def broadcast_except(self, session_id: str, except_user_id: str, message: dict):
+        """Broadcast message to all users except one"""
+        if session_id not in self.connections:
+            return
+        
+        disconnected = []
+        for user_id, ws in self.connections[session_id].items():
+            if user_id == except_user_id:
+                continue
+            try:
+                await ws.send_json(message)
+            except Exception:
+                disconnected.append(user_id)
+        
+        for user_id in disconnected:
+            await self.disconnect(session_id, user_id)
+    
     async def send_to_user(self, session_id: str, user_id: str, message: dict):
         """Send message to specific user"""
         if session_id in self.connections and user_id in self.connections[session_id]:
