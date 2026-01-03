@@ -43,10 +43,12 @@ const LiveNotification = ({ sessions, onClose }) => {
 export const Home = () => {
   const [ownerPodcasts, setOwnerPodcasts] = useState([]);
   const [liveRooms, setLiveRooms] = useState([]);
+  const [liveSessions, setLiveSessions] = useState([]);
   const [clubStats, setClubStats] = useState(null);
   const [leaderboard, setLeaderboard] = useState([]);
   const [clubSettings, setClubSettings] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showLiveNotification, setShowLiveNotification] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -75,6 +77,15 @@ export const Home = () => {
           });
           setOwnerPodcasts(podcastsRes.data || []);
         }
+      }
+
+      // Fetch live sessions
+      try {
+        const sessionsRes = await axios.get(`${API}/live-sessions/sessions`);
+        const activeSessions = (sessionsRes.data?.sessions || []).filter(s => s.status === 'live');
+        setLiveSessions(activeSessions);
+      } catch (e) {
+        console.log('Live sessions fetch error:', e);
       }
 
       const liveRes = await axios.get(`${API}/live/active/all`);
