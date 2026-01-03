@@ -84,6 +84,7 @@ function App() {
                   <Route path="/podcast/:podcastId/transcript" element={<TranscriptViewer />} />
                   <Route path="/live/:sessionId" element={<LiveRoomView />} />
                   <Route path="/live-management" element={<LiveManagement />} />
+                  <Route path="/live" element={<LiveManagement />} />
                   <Route path="/lives" element={<LiveStreams />} />
                   <Route path="/create" element={<CreatePodcast />} />
                   <Route path="/record" element={<BrowserRecording />} />
