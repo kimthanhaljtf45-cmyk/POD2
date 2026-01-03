@@ -161,7 +161,6 @@ badges_club_module.set_db(db)
 users_club_module.set_db(db)
 admin_panel_module.set_db(db)
 live_sessions_module.set_db(db)
-referrals_module.set_db(db)
 
 
 @app.get("/api/")
