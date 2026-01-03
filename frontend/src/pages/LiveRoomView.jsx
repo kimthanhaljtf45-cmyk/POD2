@@ -722,15 +722,18 @@ export const LiveRoom = () => {
                     messages.map((msg, idx) => (
                       <div 
                         key={msg.id || idx} 
-                        className={`p-2 rounded-lg ${msg.user_id === userId ? 'bg-blue-900/50 ml-8' : 'bg-gray-800 mr-8'}`}
+                        className={`p-2 rounded-lg flex gap-2 ${msg.user_id === userId ? 'bg-blue-900/50 ml-8' : 'bg-gray-800 mr-8'}`}
                       >
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-medium text-sm text-white">{msg.username}</span>
-                          <span className="text-xs text-gray-500">
-                            {new Date(msg.timestamp).toLocaleTimeString()}
-                          </span>
+                        <UserAvatar name={msg.username} size="sm" className="flex-shrink-0 mt-1" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="font-medium text-sm text-white truncate">{msg.username}</span>
+                            <span className="text-xs text-gray-500 flex-shrink-0">
+                              {new Date(msg.timestamp).toLocaleTimeString()}
+                            </span>
+                          </div>
+                          <p className="text-sm text-gray-300 break-words">{msg.message}</p>
                         </div>
-                        <p className="text-sm text-gray-300">{msg.message}</p>
                       </div>
                     ))
                   )}
