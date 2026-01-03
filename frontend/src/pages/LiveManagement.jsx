@@ -134,9 +134,8 @@ export const LiveManagement = () => {
     }
 
     try {
-      const response = await axios.post(`${API}/live-sessions/sessions`, sessionData, {
-        headers: { 'X-Wallet-Address': walletAddress }
-      });
+      const headers = walletAddress ? { 'X-Wallet-Address': walletAddress } : {};
+      const response = await axios.post(`${API}/live-sessions/sessions`, sessionData, { headers });
       
       toast.success('Live session created!');
       setShowCreateModal(false);
