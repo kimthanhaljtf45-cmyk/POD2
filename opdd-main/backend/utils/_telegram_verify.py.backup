@@ -1,0 +1,76 @@
+"""
+Telegram Login Widget verification
+Based on official Telegram docs: https://core.telegram.org/widgets/login
+"""
+import hashlib
+import hmac
+from typing import Dict, Optional
+
+
+def verify_telegram_auth(auth_data: Dict, bot_token: str) -> bool:
+    """
+    Verify Telegram authentication data
+    
+    Args:
+        auth_data: Dictionary with auth data from Telegram Login Widget
+        bot_token: Your Telegram bot token
+        
+    Returns:
+        True if authentication is valid, False otherwise
+    """
+    check_hash = auth_data.get('hash')
+    if not check_hash:
+        return False
+    
+    # Create data check string
+    auth_data_copy = {k: v for k, v in auth_data.items() if k != 'hash'}
+    data_check_arr = [f"{k}={v}" for k, v in sorted(auth_data_copy.items())]
+    data_check_string = '\n'.join(data_check_arr)
+    
+    # Create secret key from bot token
+    secret_key = hashlib.sha256(bot_token.encode()).digest()
+    
+    # Calculate hash
+    calculated_hash = hmac.new(
+        secret_key,
+        data_check_string.encode(),
+        hashlib.sha256
+    ).hexdigest()
+    
+    # Compare hashes
+    return calculated_hash == check_hash
+
+
+def verify_telegram_auth_safe(
+    telegram_id: str,
+    auth_date: int,
+    hash_value: str,
+    bot_token: Optional[str] = None,
+    **other_data
+) -> bool:
+    """
+    Safe wrapper for Telegram auth verification
+    If bot_token is not provided, returns True (for development)
+    
+    Args:
+        telegram_id: Telegram user ID
+        auth_date: Unix timestamp
+        hash_value: Hash from Telegram
+        bot_token: Bot token (optional)
+        **other_data: Additional auth data
+        
+    Returns:
+        True if valid or bot_token not provided
+    """
+    if not bot_token:
+        # In development without bot token, allow login
+        return True
+    
+    auth_data = {
+        'id': telegram_id,
+        'auth_date': str(auth_date),
+        'hash': hash_value,
+        **{k: str(v) for k, v in other_data.items() if v is not None}
+    }
+    
+    return verify_telegram_auth(auth_data, bot_token)

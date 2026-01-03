@@ -1,0 +1,306 @@
+"""
+User Management and Role Administration Routes
+Admin-only endpoints for managing users and roles
+"""
+from fastapi import APIRouter, HTTPException, status, Depends
+from pydantic import BaseModel
+from typing import List, Optional
+from datetime import datetime, timezone
+
+from utils.permissions import (
+    require_role, require_permission, 
+    UserRole, Permission
+)
+from utils.jwt_auth import get_current_user_required
+
+router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+async def get_db():
+    """Get database instance"""
+    from server import db
+    return db
+
+
+# ========== Request/Response Models ==========
+
+class UpdateUserRoleRequest(BaseModel):
+    role: UserRole
+
+
+class UserListResponse(BaseModel):
+    id: str
+    username: str
+    email: Optional[str]
+    name: Optional[str]
+    role: str
+    is_active: bool
+    created_at: str
+    last_login: Optional[str]
+
+
+class UserStatsResponse(BaseModel):
+    total_users: int
+    active_users: int
+    role_distribution: dict
+    users_created_today: int
+    users_created_this_week: int
+    users_created_this_month: int
+
+
+# ========== Admin Endpoints ==========
+
+@router.get("/users", response_model=List[UserListResponse])
+async def list_users(
+    skip: int = 0,
+    limit: int = 50,
+    role: Optional[str] = None,
+    search: Optional[str] = None,
+    current_user: dict = Depends(require_role(UserRole.ADMIN))
+):
+    """
+    List all users (admin only)
+    
+    Query params:
+    - skip: Number of users to skip
+    - limit: Max number of users to return
+    - role: Filter by role
+    - search: Search by username or email
+    """
+    db = await get_db()
+    
+    # Build query
+    query = {}
+    if role:
+        query["role"] = role
+    if search:
+        query["$or"] = [
+            {"username": {"$regex": search, "$options": "i"}},
+            {"email": {"$regex": search, "$options": "i"}},
+            {"name": {"$regex": search, "$options": "i"}}
+        ]
+    
+    # Get users
+    cursor = db.users.find(query).skip(skip).limit(limit).sort("created_at", -1)
+    users = await cursor.to_list(length=limit)
+    
+    return [
+        UserListResponse(
+            id=user["id"],
+            username=user["username"],
+            email=user.get("email"),
+            name=user.get("name"),
+            role=user.get("role", "user"),
+            is_active=user.get("is_active", True),
+            created_at=user.get("created_at", ""),
+            last_login=user.get("last_login")
+        )
+        for user in users
+    ]
+
+
+@router.get("/users/stats", response_model=UserStatsResponse)
+async def get_user_stats(
+    current_user: dict = Depends(require_role(UserRole.ADMIN))
+):
+    """Get user statistics (admin only)"""
+    db = await get_db()
+    
+    # Total users
+    total_users = await db.users.count_documents({})
+    active_users = await db.users.count_documents({"is_active": True})
+    
+    # Role distribution
+    pipeline = [
+        {"$group": {"_id": "$role", "count": {"$sum": 1}}},
+        {"$sort": {"count": -1}}
+    ]
+    role_dist = await db.users.aggregate(pipeline).to_list(length=10)
+    role_distribution = {item["_id"] or "user": item["count"] for item in role_dist}
+    
+    # Users created in time periods
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_start = now.replace(hour=0, minute=0, second=0, microsecond=0, day=now.day - now.weekday())
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    
+    users_today = await db.users.count_documents({
+        "created_at": {"$gte": today_start.isoformat()}
+    })
+    users_week = await db.users.count_documents({
+        "created_at": {"$gte": week_start.isoformat()}
+    })
+    users_month = await db.users.count_documents({
+        "created_at": {"$gte": month_start.isoformat()}
+    })
+    
+    return UserStatsResponse(
+        total_users=total_users,
+        active_users=active_users,
+        role_distribution=role_distribution,
+        users_created_today=users_today,
+        users_created_this_week=users_week,
+        users_created_this_month=users_month
+    )
+
+
+@router.get("/users/{user_id}")
+async def get_user_details(
+    user_id: str,
+    current_user: dict = Depends(require_role(UserRole.ADMIN))
+):
+    """Get detailed user information (admin only)"""
+    db = await get_db()
+    
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Remove sensitive data
+    user.pop("password_hash", None)
+    user.pop("_id", None)
+    
+    # Get user's content stats
+    podcasts_count = await db.podcasts.count_documents({"author_id": user_id})
+    comments_count = await db.comments.count_documents({"user_id": user_id})
+    
+    return {
+        **user,
+        "stats": {
+            "podcasts_count": podcasts_count,
+            "comments_count": comments_count
+        }
+    }
+
+
+@router.patch("/users/{user_id}/role")
+async def update_user_role(
+    user_id: str,
+    request: UpdateUserRoleRequest,
+    current_user: dict = Depends(require_role(UserRole.ADMIN))
+):
+    """Update user role (admin only)"""
+    db = await get_db()
+    
+    # Check if user exists
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Prevent self-demotion from admin
+    if user_id == current_user["id"] and request.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot demote yourself from admin role"
+        )
+    
+    # Update role
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"role": request.role.value}}
+    )
+    
+    return {
+        "message": "User role updated successfully",
+        "user_id": user_id,
+        "new_role": request.role.value
+    }
+
+
+@router.patch("/users/{user_id}/status")
+async def toggle_user_status(
+    user_id: str,
+    is_active: bool,
+    current_user: dict = Depends(require_role(UserRole.ADMIN))
+):
+    """Activate or deactivate user account (admin only)"""
+    db = await get_db()
+    
+    # Check if user exists
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Prevent self-deactivation
+    if user_id == current_user["id"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot deactivate your own account"
+        )
+    
+    # Update status
+    await db.users.update_one(
+        {"id": user_id},
+        {"$set": {"is_active": is_active}}
+    )
+    
+    return {
+        "message": f"User account {'activated' if is_active else 'deactivated'}",
+        "user_id": user_id,
+        "is_active": is_active
+    }
+
+
+@router.delete("/users/{user_id}")
+async def delete_user(
+    user_id: str,
+    permanent: bool = False,
+    current_user: dict = Depends(require_role(UserRole.ADMIN))
+):
+    """
+    Delete user account (admin only)
+    
+    If permanent=False, just deactivates the account
+    If permanent=True, permanently deletes all user data
+    """
+    db = await get_db()
+    
+    # Check if user exists
+    user = await db.users.find_one({"id": user_id})
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Prevent self-deletion
+    if user_id == current_user["id"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot delete your own account"
+        )
+    
+    if permanent:
+        # Permanently delete user and all their content
+        await db.users.delete_one({"id": user_id})
+        await db.podcasts.delete_many({"author_id": user_id})
+        await db.comments.delete_many({"user_id": user_id})
+        await db.messages.delete_many({
+            "$or": [{"sender_id": user_id}, {"recipient_id": user_id}]
+        })
+        await db.notifications.delete_many({"user_id": user_id})
+        
+        return {
+            "message": "User and all associated data permanently deleted",
+            "user_id": user_id
+        }
+    else:
+        # Soft delete - just deactivate
+        await db.users.update_one(
+            {"id": user_id},
+            {"$set": {"is_active": False, "deleted_at": datetime.now(timezone.utc).isoformat()}}
+        )
+        
+        return {
+            "message": "User account deactivated",
+            "user_id": user_id
+        }
