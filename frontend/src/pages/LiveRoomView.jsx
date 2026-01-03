@@ -821,9 +821,13 @@ export const LiveRoom = () => {
                   <div className="space-y-2">
                     {handRaised.map((uid) => {
                       const user = participants.find(p => p.user_id === uid);
+                      const displayName = user?.username || uid;
                       return (
                         <div key={uid} className="flex items-center justify-between p-2 bg-gray-900 rounded">
-                          <span className="text-white text-sm">{user?.username || uid}</span>
+                          <div className="flex items-center gap-2">
+                            <UserAvatar name={displayName} size="sm" />
+                            <span className="text-white text-sm">{displayName}</span>
+                          </div>
                           <Button 
                             size="sm" 
                             onClick={() => handlePromote(uid)}
@@ -852,6 +856,7 @@ export const LiveRoom = () => {
                   {/* Speakers */}
                   {participants.filter(p => speakers.includes(p.user_id)).map((p) => (
                     <div key={p.user_id} className="flex items-center gap-2 p-2 bg-purple-500/10 rounded">
+                      <UserAvatar name={p.username} size="sm" />
                       <Crown className="w-4 h-4 text-yellow-500" />
                       <span className="text-white text-sm flex-1">{p.username}</span>
                       {isSpeaker && p.user_id !== userId && (
@@ -864,7 +869,7 @@ export const LiveRoom = () => {
                   {/* Listeners */}
                   {participants.filter(p => listeners.includes(p.user_id)).map((p) => (
                     <div key={p.user_id} className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded">
-                      <div className="w-4 h-4 rounded-full bg-gray-600" />
+                      <UserAvatar name={p.username} size="sm" />
                       <span className="text-gray-300 text-sm flex-1">{p.username}</span>
                       {handRaised.includes(p.user_id) && (
                         <Hand className="w-4 h-4 text-yellow-500 animate-bounce" />
