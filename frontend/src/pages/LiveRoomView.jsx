@@ -339,6 +339,10 @@ export const LiveRoom = () => {
         
       case 'chat_message':
         setMessages(prev => [...prev, data.message]);
+        // Play sound for new messages from others
+        if (data.message.user_id !== userId) {
+          playMessageSound();
+        }
         break;
         
       case 'reaction':
