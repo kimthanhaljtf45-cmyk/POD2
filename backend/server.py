@@ -85,10 +85,6 @@ from routes import ai_features as ai_module
 from routes import social_features as social_module
 from routes import content_features as content_module
 
-# Referral system
-from routes.referrals import router as referrals_router
-from routes import referrals as referrals_module
-
 # Private Voice Club routes
 from routes.club_management import router as club_management_router
 from routes.xp import router as xp_router
