@@ -135,9 +135,6 @@ app.include_router(telegram_streaming_router, prefix="/api")
 app.include_router(recommendations_router)
 app.include_router(auth_router, prefix="/api")
 
-# Referral system router
-app.include_router(referrals_router)
-
 # Private Voice Club routers
 app.include_router(club_management_router, prefix="/api")
 app.include_router(xp_router, prefix="/api")
