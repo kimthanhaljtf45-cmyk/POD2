@@ -1,0 +1,467 @@
+"""
+Private RSS Feed Routes
+Secure RSS feeds with token-based authentication
+"""
+from fastapi import APIRouter, HTTPException, Response, Request, Query, Depends
+from typing import List, Optional
+from datetime import datetime, timezone
+import secrets
+
+from models import RSSFeedToken, RSSFeedTokenCreate, RSSFeedTokenUpdate, RSSAccessLog
+from rss_generator import generate_author_rss_feed, generate_podcast_rss_feed, get_base_url_from_env
+from utils.jwt_auth import get_current_user_required
+
+router = APIRouter(prefix="/private-rss", tags=["private-rss"])
+
+
+async def get_db():
+    """Get database instance"""
+    from server import db
+    return db
+
+
+# ========== Token Management ==========
+
+@router.post("/tokens", response_model=RSSFeedToken)
+async def create_rss_token(
+    token_data: RSSFeedTokenCreate,
+    current_user: dict = Depends(get_current_user_required)
+):
+    """
+    Create a private RSS feed token
+    Allows user to generate secure RSS URLs for podcast apps
+    """
+    db = await get_db()
+    
+    # Verify ownership
+    if token_data.user_id != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Can only create tokens for yourself")
+    
+    # Validate feed type
+    if token_data.feed_type not in ["author", "podcast"]:
+        raise HTTPException(status_code=400, detail="feed_type must be 'author' or 'podcast'")
+    
+    # Validate author/podcast exists
+    if token_data.feed_type == "author":
+        if not token_data.author_id:
+            raise HTTPException(status_code=400, detail="author_id required for author feed")
+        author = await db.authors.find_one({"id": token_data.author_id})
+        if not author:
+            raise HTTPException(status_code=404, detail="Author not found")
+    else:  # podcast
+        if not token_data.podcast_id:
+            raise HTTPException(status_code=400, detail="podcast_id required for podcast feed")
+        podcast = await db.podcasts.find_one({"id": token_data.podcast_id})
+        if not podcast:
+            raise HTTPException(status_code=404, detail="Podcast not found")
+    
+    # Create token
+    token_obj = RSSFeedToken(**token_data.model_dump())
+    
+    # Generate secure random token (override default)
+    token_obj.token = secrets.token_urlsafe(32)
+    
+    doc = token_obj.model_dump()
+    doc['created_at'] = doc['created_at'].isoformat()
+    if doc.get('expires_at'):
+        doc['expires_at'] = doc['expires_at'].isoformat()
+    if doc.get('last_accessed_at'):
+        doc['last_accessed_at'] = doc['last_accessed_at'].isoformat()
+    
+    await db.rss_feed_tokens.insert_one(doc)
+    
+    return token_obj
+
+
+@router.get("/tokens", response_model=List[RSSFeedToken])
+async def list_rss_tokens(
+    current_user: dict = Depends(get_current_user_required)
+):
+    """List all RSS tokens for current user"""
+    db = await get_db()
+    
+    cursor = db.rss_feed_tokens.find(
+        {"user_id": current_user["id"]},
+        {"_id": 0}
+    ).sort("created_at", -1)
+    
+    tokens = await cursor.to_list(length=100)
+    return [RSSFeedToken(**token) for token in tokens]
+
+
+@router.get("/tokens/{token_id}", response_model=RSSFeedToken)
+async def get_rss_token(
+    token_id: str,
+    current_user: dict = Depends(get_current_user_required)
+):
+    """Get specific RSS token details"""
+    db = await get_db()
+    
+    token = await db.rss_feed_tokens.find_one(
+        {"id": token_id, "user_id": current_user["id"]},
+        {"_id": 0}
+    )
+    
+    if not token:
+        raise HTTPException(status_code=404, detail="Token not found")
+    
+    return RSSFeedToken(**token)
+
+
+@router.patch("/tokens/{token_id}", response_model=RSSFeedToken)
+async def update_rss_token(
+    token_id: str,
+    update_data: RSSFeedTokenUpdate,
+    current_user: dict = Depends(get_current_user_required)
+):
+    """Update RSS token settings"""
+    db = await get_db()
+    
+    # Check ownership
+    token = await db.rss_feed_tokens.find_one(
+        {"id": token_id, "user_id": current_user["id"]}
+    )
+    if not token:
+        raise HTTPException(status_code=404, detail="Token not found")
+    
+    # Update fields
+    update_dict = {k: v for k, v in update_data.model_dump().items() if v is not None}
+    if update_dict.get('expires_at'):
+        update_dict['expires_at'] = update_dict['expires_at'].isoformat()
+    
+    if update_dict:
+        await db.rss_feed_tokens.update_one(
+            {"id": token_id},
+            {"$set": update_dict}
+        )
+    
+    # Return updated token
+    updated = await db.rss_feed_tokens.find_one({"id": token_id}, {"_id": 0})
+    return RSSFeedToken(**updated)
+
+
+@router.post("/tokens/{token_id}/regenerate")
+async def regenerate_token(
+    token_id: str,
+    current_user: dict = Depends(get_current_user_required)
+):
+    """Regenerate token string (invalidates old token)"""
+    db = await get_db()
+    
+    # Check ownership
+    token = await db.rss_feed_tokens.find_one(
+        {"id": token_id, "user_id": current_user["id"]}
+    )
+    if not token:
+        raise HTTPException(status_code=404, detail="Token not found")
+    
+    # Generate new token
+    new_token = secrets.token_urlsafe(32)
+    
+    await db.rss_feed_tokens.update_one(
+        {"id": token_id},
+        {"$set": {"token": new_token}}
+    )
+    
+    return {
+        "message": "Token regenerated successfully",
+        "token": new_token,
+        "feed_url": f"{get_base_url_from_env()}/api/private-rss/feed?token={new_token}"
+    }
+
+
+@router.delete("/tokens/{token_id}")
+async def delete_rss_token(
+    token_id: str,
+    current_user: dict = Depends(get_current_user_required)
+):
+    """Delete RSS token (revoke access)"""
+    db = await get_db()
+    
+    result = await db.rss_feed_tokens.delete_one(
+        {"id": token_id, "user_id": current_user["id"]}
+    )
+    
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Token not found")
+    
+    return {"message": "Token deleted successfully"}
+
+
+# ========== Private RSS Feed Access ==========
+
+async def verify_token(token: str, db) -> Optional[dict]:
+    """Verify RSS token and return token data"""
+    token_doc = await db.rss_feed_tokens.find_one(
+        {"token": token, "is_active": True},
+        {"_id": 0}
+    )
+    
+    if not token_doc:
+        return None
+    
+    # Check expiration
+    if token_doc.get('expires_at'):
+        expires_at = datetime.fromisoformat(token_doc['expires_at'])
+        if expires_at < datetime.now(timezone.utc):
+            return None
+    
+    return token_doc
+
+
+async def log_rss_access(
+    db,
+    token_doc: dict,
+    request: Request,
+    feed_type: str,
+    feed_id: str,
+    items_count: int
+):
+    """Log RSS feed access for analytics"""
+    log = RSSAccessLog(
+        token_id=token_doc['id'],
+        user_id=token_doc['user_id'],
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get('user-agent'),
+        referer=request.headers.get('referer'),
+        feed_type=feed_type,
+        feed_id=feed_id,
+        items_returned=items_count
+    )
+    
+    log_doc = log.model_dump()
+    log_doc['accessed_at'] = log_doc['accessed_at'].isoformat()
+    
+    # Insert log
+    await db.rss_access_logs.insert_one(log_doc)
+    
+    # Update token stats
+    await db.rss_feed_tokens.update_one(
+        {"id": token_doc['id']},
+        {
+            "$inc": {"access_count": 1},
+            "$set": {
+                "last_accessed_at": datetime.now(timezone.utc).isoformat(),
+                "ip_address": request.client.host if request.client else None,
+                "user_agent": request.headers.get('user-agent')
+            }
+        }
+    )
+
+
+@router.get("/feed")
+async def get_private_rss_feed(
+    request: Request,
+    token: str = Query(..., description="Private RSS token")
+):
+    """
+    Access private RSS feed with token
+    
+    URL format: /api/private-rss/feed?token=YOUR_TOKEN
+    """
+    db = await get_db()
+    
+    # Verify token
+    token_doc = await verify_token(token, db)
+    if not token_doc:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired token"
+        )
+    
+    base_url = get_base_url_from_env()
+    
+    # Generate RSS based on feed type
+    if token_doc['feed_type'] == 'author':
+        author_id = token_doc['author_id']
+        
+        # Get author
+        author = await db.authors.find_one({"id": author_id}, {"_id": 0})
+        if not author:
+            raise HTTPException(status_code=404, detail="Author not found")
+        
+        # Get podcasts (respecting token settings)
+        query = {
+            "author_id": author_id,
+            "audio_file_id": {"$exists": True, "$ne": None}
+        }
+        
+        if token_doc.get('allow_public_podcasts_only'):
+            query["visibility"] = "public"
+        
+        podcasts = await db.podcasts.find(query, {"_id": 0}) \
+            .sort("created_at", -1) \
+            .limit(token_doc.get('max_items', 100)) \
+            .to_list(length=token_doc.get('max_items', 100))
+        
+        # Generate feed
+        rss_xml = generate_author_rss_feed(author, podcasts, base_url)
+        
+        # Log access
+        await log_rss_access(db, token_doc, request, 'author', author_id, len(podcasts))
+        
+    else:  # podcast
+        podcast_id = token_doc['podcast_id']
+        
+        # Get podcast
+        podcast = await db.podcasts.find_one({"id": podcast_id}, {"_id": 0})
+        if not podcast:
+            raise HTTPException(status_code=404, detail="Podcast not found")
+        
+        # Get author
+        author = await db.authors.find_one({"id": podcast['author_id']}, {"_id": 0})
+        if not author:
+            raise HTTPException(status_code=404, detail="Author not found")
+        
+        # Generate feed
+        rss_xml = generate_podcast_rss_feed(podcast, author, base_url)
+        
+        # Log access
+        await log_rss_access(db, token_doc, request, 'podcast', podcast_id, 1)
+    
+    return Response(content=rss_xml, media_type="application/rss+xml")
+
+
+# ========== RSS Analytics ==========
+
+@router.get("/tokens/{token_id}/stats")
+async def get_token_stats(
+    token_id: str,
+    days: int = 30,
+    current_user: dict = Depends(get_current_user_required)
+):
+    """Get access statistics for RSS token"""
+    db = await get_db()
+    
+    # Verify ownership
+    token = await db.rss_feed_tokens.find_one(
+        {"id": token_id, "user_id": current_user["id"]}
+    )
+    if not token:
+        raise HTTPException(status_code=404, detail="Token not found")
+    
+    # Get access logs
+    since = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    since = since.replace(day=since.day - days)
+    
+    logs = await db.rss_access_logs.find(
+        {
+            "token_id": token_id,
+            "accessed_at": {"$gte": since.isoformat()}
+        },
+        {"_id": 0}
+    ).to_list(length=10000)
+    
+    # Aggregate stats
+    total_accesses = len(logs)
+    unique_ips = len(set(log.get('ip_address') for log in logs if log.get('ip_address')))
+    unique_user_agents = len(set(log.get('user_agent') for log in logs if log.get('user_agent')))
+    
+    # User agent distribution (podcast apps)
+    user_agent_dist = {}
+    for log in logs:
+        ua = log.get('user_agent', 'Unknown')
+        # Extract app name (simplified)
+        if 'AppleCoreMedia' in ua:
+            app = 'Apple Podcasts'
+        elif 'Spotify' in ua:
+            app = 'Spotify'
+        elif 'Overcast' in ua:
+            app = 'Overcast'
+        elif 'PocketCasts' in ua:
+            app = 'Pocket Casts'
+        elif 'Castro' in ua:
+            app = 'Castro'
+        else:
+            app = 'Other'
+        
+        user_agent_dist[app] = user_agent_dist.get(app, 0) + 1
+    
+    # Daily access counts
+    daily_accesses = {}
+    for log in logs:
+        date = log['accessed_at'][:10]  # YYYY-MM-DD
+        daily_accesses[date] = daily_accesses.get(date, 0) + 1
+    
+    return {
+        "token_id": token_id,
+        "token_name": token['name'],
+        "total_accesses": total_accesses,
+        "unique_ips": unique_ips,
+        "unique_user_agents": unique_user_agents,
+        "user_agent_distribution": user_agent_dist,
+        "daily_accesses": daily_accesses,
+        "last_accessed_at": token.get('last_accessed_at'),
+        "period_days": days
+    }
+
+
+@router.get("/analytics")
+async def get_rss_analytics(
+    days: int = 30,
+    current_user: dict = Depends(get_current_user_required)
+):
+    """Get overall RSS analytics for user"""
+    db = await get_db()
+    
+    # Get all user's tokens
+    tokens = await db.rss_feed_tokens.find(
+        {"user_id": current_user["id"]},
+        {"_id": 0}
+    ).to_list(length=100)
+    
+    if not tokens:
+        return {
+            "total_tokens": 0,
+            "active_tokens": 0,
+            "total_accesses": 0,
+            "tokens": []
+        }
+    
+    token_ids = [t['id'] for t in tokens]
+    
+    # Get access logs
+    since = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+    since = since.replace(day=since.day - days)
+    
+    logs = await db.rss_access_logs.find(
+        {
+            "token_id": {"$in": token_ids},
+            "accessed_at": {"$gte": since.isoformat()}
+        },
+        {"_id": 0}
+    ).to_list(length=100000)
+    
+    # Aggregate by token
+    token_stats = {}
+    for log in logs:
+        tid = log['token_id']
+        if tid not in token_stats:
+            token_stats[tid] = {"accesses": 0, "unique_ips": set()}
+        token_stats[tid]["accesses"] += 1
+        if log.get('ip_address'):
+            token_stats[tid]["unique_ips"].add(log['ip_address'])
+    
+    # Prepare response
+    tokens_with_stats = []
+    for token in tokens:
+        tid = token['id']
+        stats = token_stats.get(tid, {"accesses": 0, "unique_ips": set()})
+        tokens_with_stats.append({
+            "id": tid,
+            "name": token['name'],
+            "feed_type": token['feed_type'],
+            "is_active": token['is_active'],
+            "total_accesses": token.get('access_count', 0),
+            "recent_accesses": stats["accesses"],
+            "unique_subscribers": len(stats["unique_ips"]),
+            "last_accessed_at": token.get('last_accessed_at')
+        })
+    
+    return {
+        "total_tokens": len(tokens),
+        "active_tokens": sum(1 for t in tokens if t['is_active']),
+        "total_accesses": len(logs),
+        "period_days": days,
+        "tokens": tokens_with_stats
+    }
