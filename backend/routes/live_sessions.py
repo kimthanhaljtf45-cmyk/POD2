@@ -164,8 +164,8 @@ class LiveRoomManager:
             "stats": self.get_stats(session_id)
         })
         
-        # Then broadcast join event to others
-        await self.broadcast(session_id, {
+        # Then broadcast join event to OTHERS (not self)
+        await self.broadcast_except(session_id, user_id, {
             "type": "user_joined",
             "user_id": user_id,
             "username": username,
