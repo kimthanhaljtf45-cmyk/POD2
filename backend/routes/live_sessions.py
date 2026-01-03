@@ -954,7 +954,7 @@ async def live_room_websocket(websocket: WebSocket, session_id: str):
     
     # Verify session exists
     session = await db.live_sessions.find_one({"id": session_id})
-    if not session or session.get("status") not in ["scheduled", "live"]:
+    if not session or session.get("status") not in ["scheduled", "live", "active"]:
         await websocket.close(code=4004)
         return
     
