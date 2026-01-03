@@ -1,15 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { Shield, Users, Settings, Save, AlertCircle, Trash2, Ban, Edit, Eye } from 'lucide-react';
+import { Shield, Users, Settings, Save, AlertCircle, Trash2, Ban, Edit, Eye, Lock, Key } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { useWallet } from '../context/WalletContext';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
 
 export const AdminPanel = () => {
+  const { walletAddress } = useWallet();
   const [activeTab, setActiveTab] = useState('wallets');
+  
+  // Bootstrap mode state
+  const [bootstrapMode, setBootstrapMode] = useState(false);
+  const [bootstrapPassword, setBootstrapPassword] = useState('');
   
   // Wallets state
   const [ownerWallet, setOwnerWallet] = useState('');
@@ -38,6 +44,7 @@ export const AdminPanel = () => {
       
       setOwnerWallet(walletsRes.data.owner_wallet || '');
       setAdminWallets(walletsRes.data.admin_wallets.length > 0 ? walletsRes.data.admin_wallets : ['']);
+      setBootstrapMode(walletsRes.data.bootstrap_mode || false);
       setClubSettings(clubRes.data);
       setLoading(false);
     } catch (error) {
@@ -64,7 +71,50 @@ export const AdminPanel = () => {
     }
   }, [activeTab]);
 
+  const handleBootstrapSave = async () => {
+    if (!bootstrapPassword) {
+      setMessage({ type: 'error', text: 'Введите пароль для первоначальной настройки' });
+      return;
+    }
+    
+    if (!ownerWallet || !ownerWallet.startsWith('0x')) {
+      setMessage({ type: 'error', text: 'Введите корректный адрес кошелька владельца (начинается с 0x)' });
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+
+    const filteredAdminWallets = adminWallets.filter(w => w.trim() !== '' && w.startsWith('0x'));
+
+    try {
+      await axios.post(`${API}/admin/bootstrap`, {
+        password: bootstrapPassword,
+        owner_wallet: ownerWallet.trim(),
+        admin_wallets: filteredAdminWallets
+      });
+
+      setMessage({ type: 'success', text: 'Первоначальная настройка завершена! Теперь подключите кошелек владельца через MetaMask.' });
+      setBootstrapMode(false);
+      setBootstrapPassword('');
+      setTimeout(() => setMessage(null), 5000);
+    } catch (error) {
+      setMessage({ 
+        type: 'error', 
+        text: error.response?.data?.detail || 'Ошибка при сохранении. Проверьте пароль.' 
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSaveWallets = async () => {
+    // If in bootstrap mode, use bootstrap endpoint
+    if (bootstrapMode) {
+      handleBootstrapSave();
+      return;
+    }
+
     setSaving(true);
     setMessage(null);
 
@@ -74,6 +124,8 @@ export const AdminPanel = () => {
       await axios.post(`${API}/admin/settings`, {
         owner_wallet: ownerWallet.trim(),
         admin_wallets: filteredAdminWallets
+      }, {
+        headers: walletAddress ? { 'X-Wallet-Address': walletAddress } : {}
       });
 
       setMessage({ type: 'success', text: 'Настройки успешно сохранены!' });
@@ -81,7 +133,7 @@ export const AdminPanel = () => {
     } catch (error) {
       setMessage({ 
         type: 'error', 
-        text: error.response?.data?.detail || 'Ошибка при сохранении настроек' 
+        text: error.response?.data?.detail || 'Ошибка при сохранении настроек. Подключите кошелек владельца.' 
       });
     } finally {
       setSaving(false);
@@ -178,6 +230,20 @@ export const AdminPanel = () => {
 
           {/* Wallets Tab */}
           <TabsContent value="wallets" className="space-y-6">
+            {/* Bootstrap Mode Alert */}
+            {bootstrapMode && (
+              <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
+                <div className="flex items-start gap-3">
+                  <Key className="w-5 h-5 text-yellow-600 mt-0.5" />
+                  <div className="text-sm text-yellow-900">
+                    <p className="font-semibold mb-1">Режим первоначальной настройки</p>
+                    <p>Владелец ещё не установлен. Введите пароль администратора и адрес кошелька владельца для настройки.</p>
+                    <p className="mt-2 font-mono text-xs bg-yellow-100 p-2 rounded">Пароль по умолчанию: fomo2025admin</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Alert */}
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
               <div className="flex items-start gap-3">
@@ -188,11 +254,34 @@ export const AdminPanel = () => {
                     <li>Владелец (Owner) имеет полный контроль над клубом</li>
                     <li>Администраторы (Admins) могут создавать контент и управлять пользователями</li>
                     <li>Адреса кошельков должны начинаться с 0x</li>
-                    <li>После сохранения, подключите нужный кошелек через MetaMask</li>
+                    {!bootstrapMode && <li>После сохранения, подключите нужный кошелек через MetaMask</li>}
                   </ul>
                 </div>
               </div>
             </div>
+
+            {/* Bootstrap Password (only in bootstrap mode) */}
+            {bootstrapMode && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Lock className="w-5 h-5" />
+                    Пароль Администратора
+                  </CardTitle>
+                  <CardDescription>
+                    Введите пароль для первоначальной настройки
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <Input
+                    type="password"
+                    placeholder="Введите пароль..."
+                    value={bootstrapPassword}
+                    onChange={(e) => setBootstrapPassword(e.target.value)}
+                  />
+                </CardContent>
+              </Card>
+            )}
 
             {/* Owner Wallet */}
             <Card>
@@ -268,7 +357,7 @@ export const AdminPanel = () => {
                 className="bg-gray-900 hover:bg-gray-800"
               >
                 <Save className="w-4 h-4 mr-2" />
-                {saving ? 'Сохранение...' : 'Сохранить настройки'}
+                {saving ? 'Сохранение...' : bootstrapMode ? 'Настроить владельца' : 'Сохранить настройки'}
               </Button>
             </div>
           </TabsContent>
