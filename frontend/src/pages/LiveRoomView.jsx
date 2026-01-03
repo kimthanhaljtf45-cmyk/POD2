@@ -329,7 +329,10 @@ export const LiveRoom = () => {
         break;
         
       case 'user_joined':
-        toast.info(`${data.username || 'User'} joined`);
+        // Only show toast for other users, not self
+        if (data.user_id !== userId) {
+          toast.info(`${data.username || 'User'} joined`);
+        }
         setStats(data.stats || stats);
         break;
         
