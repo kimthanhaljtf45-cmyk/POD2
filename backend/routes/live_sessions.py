@@ -153,16 +153,7 @@ class LiveRoomManager:
             if user_id not in room["listeners"]:
                 room["listeners"].append(user_id)
         
-        # Broadcast join event
-        await self.broadcast(session_id, {
-            "type": "user_joined",
-            "user_id": user_id,
-            "username": username,
-            "role": role,
-            "stats": self.get_stats(session_id)
-        })
-        
-        # Send current room state to new user
+        # Send current room state to new user FIRST
         await self.send_to_user(session_id, user_id, {
             "type": "room_state",
             "participants": list(room["participants"].values()),
@@ -170,6 +161,15 @@ class LiveRoomManager:
             "listeners": room["listeners"],
             "hand_raised": room["hand_raised"],
             "chat_messages": room["chat_messages"][-50:],
+            "stats": self.get_stats(session_id)
+        })
+        
+        # Then broadcast join event to others
+        await self.broadcast(session_id, {
+            "type": "user_joined",
+            "user_id": user_id,
+            "username": username,
+            "role": role,
             "stats": self.get_stats(session_id)
         })
     
