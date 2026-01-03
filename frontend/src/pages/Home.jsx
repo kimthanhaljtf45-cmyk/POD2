@@ -1,11 +1,44 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate, Link } from 'react-router-dom';
-import { Loader2, Users, Radio, Play, Mic, ChevronRight } from 'lucide-react';
+import { Loader2, Users, Radio, Play, Mic, ChevronRight, Bell, X } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { PodcastCard } from '../components/PodcastCard';
 
 const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+
+// Live stream notification banner
+const LiveNotification = ({ sessions, onClose }) => {
+  if (!sessions || sessions.length === 0) return null;
+  
+  return (
+    <div className="bg-gradient-to-r from-red-500 to-pink-500 text-white px-4 py-3 rounded-lg mb-6 animate-pulse-slow" data-testid="live-notification">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            <Radio className="w-5 h-5 animate-pulse" />
+            <span className="font-semibold">🔴 Live Now!</span>
+          </div>
+          <span className="text-white/90">
+            {sessions.length === 1 
+              ? `"${sessions[0].title}" is streaming now!` 
+              : `${sessions.length} streams are live now!`}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link to={sessions.length === 1 ? `/live/${sessions[0].id}` : '/lives'}>
+            <Button size="sm" variant="secondary" className="bg-white text-red-600 hover:bg-gray-100">
+              Join Now
+            </Button>
+          </Link>
+          <button onClick={onClose} className="text-white/80 hover:text-white">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 export const Home = () => {
   const [ownerPodcasts, setOwnerPodcasts] = useState([]);
