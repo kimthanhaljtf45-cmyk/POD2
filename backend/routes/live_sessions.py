@@ -52,7 +52,7 @@ XP_REWARDS = {
 
 async def award_session_xp(user_id: str, action: str, metadata: dict = None):
     """Award XP for live session actions"""
-    if not db:
+    if db is None:
         return
     
     xp_amount = XP_REWARDS.get(action, 0)
