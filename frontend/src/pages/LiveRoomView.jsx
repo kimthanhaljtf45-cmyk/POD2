@@ -285,7 +285,7 @@ export const LiveRoom = () => {
     ws.onopen = () => {
       console.log('WebSocket connected');
       setWsConnected(true);
-      toast.success('Connected to live room');
+      // Don't show toast on reconnect to avoid spam
     };
     
     ws.onmessage = (event) => {
