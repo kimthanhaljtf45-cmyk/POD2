@@ -305,8 +305,8 @@ export const LiveRoom = () => {
       console.log('WebSocket closed');
       setWsConnected(false);
       
-      // Reconnect after delay
-      if (session?.status === 'live') {
+      // Reconnect after delay if session is still active
+      if (session?.status === 'live' || session?.status === 'active') {
         reconnectTimeoutRef.current = setTimeout(() => {
           connectWebSocket();
         }, 3000);
