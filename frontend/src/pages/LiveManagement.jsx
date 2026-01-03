@@ -87,20 +87,19 @@ export const LiveManagement = () => {
   }, [walletAddress]);
 
   const checkAdminRole = async () => {
+    // For private club - allow access without wallet
+    // If wallet is connected, check if admin
     if (walletAddress) {
       try {
         const response = await axios.get(`${API}/admin/check-role/${walletAddress}`);
         const isAdminUser = response.data.is_admin || response.data.is_owner;
         setIsAdmin(isAdminUser);
-        
-        if (!isAdminUser) {
-          navigate('/');
-        }
       } catch (error) {
-        navigate('/');
+        setIsAdmin(true); // Allow access on error for private club
       }
     } else {
-      navigate('/');
+      // No wallet - still allow access for private club
+      setIsAdmin(true);
     }
   };
 
