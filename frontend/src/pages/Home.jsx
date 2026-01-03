@@ -109,6 +109,14 @@ export const Home = () => {
   return (
     <div className="min-h-screen bg-gray-50 pt-20 pb-12" data-testid="home-page">
       <div className="max-w-6xl mx-auto px-4 py-8">
+        {/* Live Notification Banner */}
+        {showLiveNotification && liveSessions.length > 0 && (
+          <LiveNotification 
+            sessions={liveSessions} 
+            onClose={() => setShowLiveNotification(false)} 
+          />
+        )}
+        
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-3xl font-semibold text-gray-900 mb-2" data-testid="home-title">
