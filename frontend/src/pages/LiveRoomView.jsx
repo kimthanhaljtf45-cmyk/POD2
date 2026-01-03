@@ -413,7 +413,7 @@ export const LiveRoom = () => {
   }, [loadSession]);
   
   useEffect(() => {
-    if (session?.status === 'live' || session?.status === 'scheduled') {
+    if (session?.status === 'live' || session?.status === 'scheduled' || session?.status === 'active') {
       connectWebSocket();
     }
     
