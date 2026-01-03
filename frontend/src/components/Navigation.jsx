@@ -63,7 +63,6 @@ export const Navigation = () => {
     { path: '/members', icon: Users, label: 'Members' },
     { path: '/progress', icon: TrendingUp, label: 'Progress' },
     { path: '/library', icon: Library, label: 'Library' },
-    { path: '/referrals', icon: Gift, label: 'Invite' },
     ...(canCreateContent ? [{ path: '/analytics', icon: BarChart3, label: 'Analytics' }] : []),
     ...(canCreateContent ? [{ path: '/create', icon: Plus, label: 'Create', isButton: true }] : []),
   ];
